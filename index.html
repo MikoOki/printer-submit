@@ -334,18 +334,7 @@
 
         async function checkStatus() {
             try {
-                // Check if user is live on Twitch
-                const isLive = await checkTwitchLive();
-                
-                if (!isLive) {
-                    showSection('offlineSection');
-                    document.getElementById('statusBadge').textContent = 'Streamer Offline';
-                    document.getElementById('statusBadge').className = 'status-badge status-offline';
-                    return;
-                }
-
-                // TODO: Check maintenance mode from GitHub repo
-                // For now, assume not in maintenance
+                // Skip live check for now - just check if user is logged in
                 
                 // Show login or form
                 if (localStorage.getItem('twitchToken')) {
