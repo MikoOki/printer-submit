@@ -410,8 +410,9 @@
             
             if (token) {
                 localStorage.setItem('twitchToken', token);
+                // Clear hash and reload
                 window.location.hash = '';
-                window.location.reload();
+                window.location.href = window.location.pathname;
             }
         }
 
@@ -529,16 +530,8 @@
             document.getElementById('successMessage').style.display = 'none';
             
             try {
-                // Upload image if provided
-                let imageUrl = null;
-                if (imageFile) {
-                    // TODO: Implement image upload (e.g., to Discord or imgur)
-                    // For now, we'll use the data URL
-                    imageUrl = await fileToDataURL(imageFile);
-                }
-                
-                // Send to Discord webhook
-                await sendToDiscord(userData, message, imageUrl);
+                // Send to Discord webhook with image file directly
+                await sendToDiscord(userData, message, imageFile || null);
                 
                 // Show success
                 document.getElementById('successMessage').style.display = 'block';
@@ -565,7 +558,11 @@
             });
         }
 
-        async function sendToDiscord(user, message, imageUrl) {
+        async function sendToDiscord(user, message, imageFile) {
+            // Create form data for multipart upload
+            const formData = new FormData();
+            
+            // Create the embed
             const embed = {
                 title: "🖨️ Print Request",
                 color: 0x9146FF,
@@ -591,23 +588,29 @@
                     text: "MikoOki Receipt Printer"
                 }
             };
-
-            if (imageUrl) {
-                // For data URLs, we'd need to upload to a host first
-                // For now, show placeholder
-                embed.description = "Image attached (preview in Discord)";
+            
+            // If there's an image, add it as an attachment and reference it in embed
+            if (imageFile) {
+                // Add image file to form data
+                formData.append('file', imageFile, imageFile.name);
+                
+                // Reference the attachment in the embed
+                embed.image = {
+                    url: `attachment://${imageFile.name}`
+                };
             }
-
-            const webhookData = {
+            
+            // Add payload_json with the embed
+            const payload = {
                 embeds: [embed]
             };
-
+            
+            formData.append('payload_json', JSON.stringify(payload));
+            
+            // Send to Discord webhook (don't set Content-Type header - browser will set it with boundary)
             const response = await fetch(CONFIG.DISCORD_WEBHOOK_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(webhookData)
+                body: formData
             });
 
             if (!response.ok) {
