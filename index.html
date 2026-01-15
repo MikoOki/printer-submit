@@ -318,38 +318,60 @@
             TWITCH_CLIENT_ID: '6ex5fr0bltgh8apuv7l6zeo47kzg8n',
             TWITCH_REDIRECT_URI: 'https://mikooki.github.io/printer-submit/',
             DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/1460971774064726122/K41rItlBeaNhHEp413rSzirljd3x89OgSwTTiYGUcB-dvvKjeCG_xNIiBBUvHd9h7fVb',
-            GITHUB_REPO: 'MikoOki/printer-queue',
+            GITHUB_REPO: 'MikoOki/printer-submit',
             TWITCH_CHANNEL: 'mikooki'
         };
 
         let userData = null;
 
-        // Check status on load
-        window.addEventListener('load', checkStatus);
-
-        // Handle OAuth redirect
-        if (window.location.hash) {
-            handleOAuthCallback();
-        }
+        // Initialize everything on page load in the correct order
+        window.addEventListener('load', async () => {
+            // Handle OAuth redirect first if present
+            if (window.location.hash) {
+                handleOAuthCallback();
+                return; // Page will reload after handling callback
+            }
+            
+            // Then check status (including maintenance mode)
+            await checkStatus();
+        });
 
         async function checkStatus() {
             try {
-                // Skip live check for now - just check if user is logged in
+                console.log('checkStatus: Starting...');
+                
+                // Check maintenance mode from GitHub
+                const maintenanceMode = await checkMaintenanceMode();
+                console.log('checkStatus: Maintenance mode =', maintenanceMode);
+                
+                if (maintenanceMode) {
+                    console.log('checkStatus: Showing maintenance section');
+                    showSection('maintenanceSection');
+                    document.getElementById('statusBadge').textContent = 'Maintenance Mode';
+                    document.getElementById('statusBadge').className = 'status-badge status-maintenance';
+                    return;
+                }
+                
+                console.log('checkStatus: Not in maintenance, checking login...');
                 
                 // Show login or form
                 if (localStorage.getItem('twitchToken')) {
+                    console.log('checkStatus: User has token, loading user data...');
                     await loadUserData();
                     
                     // Check if banned
                     if (await isUserBanned(userData.id)) {
+                        console.log('checkStatus: User is banned');
                         showSection('bannedSection');
                         document.getElementById('statusBadge').textContent = 'Access Denied';
                         document.getElementById('statusBadge').className = 'status-badge status-offline';
                         return;
                     }
                     
+                    console.log('checkStatus: Showing form');
                     showForm();
                 } else {
+                    console.log('checkStatus: No token, showing login');
                     showSection('loginSection');
                 }
 
@@ -360,6 +382,22 @@
                 console.error('Status check error:', error);
                 showSection('offlineSection');
             }
+        }
+        
+        async function checkMaintenanceMode() {
+            try {
+                console.log('Fetching maintenance status...');
+                const response = await fetch(`https://mikooki.github.io/printer-submit/status.json?t=${Date.now()}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Maintenance status:', data);
+                    return data.maintenance_mode === true;
+                }
+                console.log('Failed to fetch maintenance status');
+            } catch (error) {
+                console.error('Error checking maintenance mode:', error);
+            }
+            return false; // Default to not maintenance if can't check
         }
 
         async function checkTwitchLive() {
@@ -385,13 +423,21 @@
         }
 
         async function isUserBanned(userId) {
-            // TODO: Check banned_users.json from GitHub repo
             try {
-                const response = await fetch(`https://raw.githubusercontent.com/${CONFIG.GITHUB_REPO}/main/banned_users.json`);
+                console.log('Checking if user is banned:', userId, typeof userId);
+                const response = await fetch(`https://mikooki.github.io/printer-submit/banned_users.json?t=${Date.now()}`);
                 if (response.ok) {
                     const bannedUsers = await response.json();
-                    return userId in bannedUsers;
+                    console.log('Ban list loaded:', Object.keys(bannedUsers).length, 'users banned');
+                    
+                    // Check both as string and number since Twitch IDs can be either
+                    const userIdStr = String(userId);
+                    const isBanned = userIdStr in bannedUsers || userId in bannedUsers;
+                    
+                    console.log('User', userId, 'banned:', isBanned);
+                    return isBanned;
                 }
+                console.log('Failed to load ban list, response not ok');
             } catch (error) {
                 console.error('Error checking ban status:', error);
             }
