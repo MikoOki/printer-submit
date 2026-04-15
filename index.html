@@ -319,7 +319,7 @@
             TWITCH_REDIRECT_URI: 'https://mikooki.github.io/printer-submit/',
             // SECURITY: never put Discord webhooks or tokens in public client code.
             // Set this to your server-side endpoint that accepts print submissions.
-            SUBMIT_API_URL: '',
+            SUBMIT_API_URL: 'https://printer-submit-api.mikookistreams.workers.dev/api/print-submit',
             GITHUB_REPO: 'MikoOki/printer-queue',
             TWITCH_CHANNEL: 'mikooki'
         };
@@ -412,8 +412,9 @@
             
             if (token) {
                 localStorage.setItem('twitchToken', token);
+                // Clear hash and reload
                 window.location.hash = '';
-                window.location.reload();
+                window.location.href = window.location.pathname;
             }
         }
 
@@ -531,16 +532,8 @@
             document.getElementById('successMessage').style.display = 'none';
             
             try {
-                // Upload image if provided
-                let imageUrl = null;
-                if (imageFile) {
-                    // TODO: Implement image upload (e.g., to Discord or imgur)
-                    // For now, we'll use the data URL
-                    imageUrl = await fileToDataURL(imageFile);
-                }
-                
                 // Send via secure server-side endpoint (never direct webhook from browser).
-                await submitPrintRequest(userData, message, imageUrl);
+                await submitPrintRequest(userData, message, imageFile || null);
                 
                 // Show success
                 document.getElementById('successMessage').style.display = 'block';
@@ -567,11 +560,15 @@
             });
         }
 
-        async function submitPrintRequest(user, message, imageUrl) {
+        async function submitPrintRequest(user, message, imageFile) {
             if (!CONFIG.SUBMIT_API_URL) {
                 throw new Error('Submissions are temporarily disabled for security. Streamer must configure SUBMIT_API_URL.');
             }
 
+            // Create form data for a secure backend upload
+            const formData = new FormData();
+            
+            // Create the embed
             const embed = {
                 title: "🖨️ Print Request",
                 color: 0x9146FF,
@@ -597,23 +594,29 @@
                     text: "MikoOki Receipt Printer"
                 }
             };
-
-            if (imageUrl) {
-                // For data URLs, we'd need to upload to a host first
-                // For now, show placeholder
-                embed.description = "Image attached (preview in Discord)";
+            
+            // If there's an image, add it as an attachment and reference it in embed
+            if (imageFile) {
+                // Add image file to form data
+                formData.append('file', imageFile, imageFile.name);
+                
+                // Reference the attachment in the embed
+                embed.image = {
+                    url: `attachment://${imageFile.name}`
+                };
             }
-
-            const webhookData = {
+            
+            // Add payload_json with the embed
+            const payload = {
                 embeds: [embed]
             };
-
+            
+            formData.append('payload_json', JSON.stringify(payload));
+            
+            // Send to backend API (backend then forwards to Discord securely).
             const response = await fetch(CONFIG.SUBMIT_API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(webhookData)
+                body: formData
             });
 
             if (!response.ok) {
